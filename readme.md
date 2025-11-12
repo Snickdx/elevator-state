@@ -5,7 +5,11 @@
 This repository demonstrates a small Flask application that uses SQLAlchemy for persisted models and the State Pattern for runtime behaviour. This README focuses on the model structure and how the state pattern is applied in this app.
 
 ## Class diagram
-See `models.png` at the project root for a visual class diagram of the application's models and state classes.
+The class diagram (models.png) is embedded below. It shows which classes are persisted SQLAlchemy models and which are runtime-only state classes.
+
+![Class diagram of models](./models.png)
+
+If your Git host does not render the image, open `models.png` directly in the repository.
 
 ## High-level overview
 - Persisted models (SQLAlchemy): represent application data stored in the database. In this project these are:
