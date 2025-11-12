@@ -13,6 +13,10 @@ class FloorState(ABC):
         pass
 
 class FirstFloor(FloorState):
+    
+    def __init__(self):
+        self.value = "first"
+    
     def groundFloor(self, elevator):
         elevator.set_door_state(ClosedDoor())
         elevator.set_floor_state(GroundFloor())
@@ -24,6 +28,10 @@ class FirstFloor(FloorState):
 
 
 class GroundFloor(FloorState):
+    
+    def __init__(self):
+        self.value = "ground"
+
     def groundFloor(self, elevator):
         print("Already on the ground floor.")
 
@@ -45,16 +53,26 @@ class DoorState(ABC):
 
 
 class OpenDoor(DoorState):
+    
+    def __init__(self):
+        self.value = "open"
+    
     def openDoor(self, elevator):
         print("Door is already open.")
 
     def closeDoor(self, elevator):
-        elevator.door_state = ClosedDoor()
+        # Use the Elevator's setter so the change is persisted to DB
+        elevator.set_door_state(ClosedDoor())
         print("Closing the door.")
 
 class ClosedDoor(DoorState):
+
+    def __init__(self):
+        self.value = "closed"
+
     def openDoor(self, elevator):
-        elevator.door_state = OpenDoor()
+        # Use the Elevator's setter so the change is persisted to DB
+        elevator.set_door_state(OpenDoor())
         print("Opening the door.")
 
     def closeDoor(self, elevator):
