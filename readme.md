@@ -1,188 +1,78 @@
 ![Tests](https://github.com/uwidcit/flaskmvc/actions/workflows/dev.yml/badge.svg)
 
-# Flask MVC Template
-A template for flask applications structured in the Model View Controller pattern [Demo](https://dcit-flaskmvc.herokuapp.com/). [Postman Collection](https://documenter.getpostman.com/view/583570/2s83zcTnEJ)
+# State Example — Models and State Pattern
 
+This repository demonstrates a small Flask application that uses SQLAlchemy for persisted models and the State Pattern for runtime behaviour. This README focuses on the model structure and how the state pattern is applied in this app.
 
-# Dependencies
-* Python3/pip3
-* Packages listed in requirements.txt
+## Class diagram
+See `models.png` at the project root for a visual class diagram of the application's models and state classes.
 
-# Installing Dependencies
-```bash
-$ pip install -r requirements.txt
+## High-level overview
+- Persisted models (SQLAlchemy): represent application data stored in the database. In this project these are:
+  - `User` — App/models/user.py
+  - `Elevator` — App/models/elevator.py
+
+- Runtime-only state classes (State Pattern): encapsulate behaviour and transitions. These are *not* SQLAlchemy models and are only used at runtime:
+  - Floor states: `FloorState` (abstract) -> `FirstFloor`, `GroundFloor` — App/models/state.py
+  - Door states: `DoorState` (abstract) -> `OpenDoor`, `ClosedDoor` — App/models/state.py
+
+## Persisted models (what's stored)
+- Elevator (App/models/elevator.py)
+  - Columns: `id`, `floor`, `door` (strings) — persisted values representing the last known state.
+  - Methods: `set_floor_state(state)`, `set_door_state(state)` commit the state change to the database.
+  - Behaviour: runtime `floor_state` and `door_state` attributes hold state objects, but persistence is performed by the setter methods which write `floor` and `door` columns and commit the session.
+
+- User (App/models/user.py)
+  - Typical user model persisted via SQLAlchemy (`db.Model`).
+
+## Runtime state classes (State Pattern)
+- The state classes implement behaviour and transitions. They are defined in `App/models/state.py` and do NOT inherit from `db.Model`.
+- FloorState hierarchy
+  - `FloorState` (abstract) defines the API: `groundFloor(elevator)` and `firstFloor(elevator)`.
+  - `FirstFloor` and `GroundFloor` implement transitions. When moving between floors they:
+    - Close the door (via elevator setter), change the floor state (via elevator setter), then open the door — using the Elevator's `set_*` methods to persist the change.
+
+- DoorState hierarchy
+  - `DoorState` (abstract) defines `openDoor(elevator)` and `closeDoor(elevator)`.
+  - `OpenDoor` / `ClosedDoor` implement these actions and must use `elevator.set_door_state(...)` so that the persisted `door` column is updated.
+
+Why this split matters
+- Persistence vs behaviour: the database stores simple identifiers (`floor`, `door`) so the persisted state is compact and queryable. The more complex runtime behaviour (what happens when you move floors or open/close doors) lives in state objects following the State Pattern. This keeps concerns separated and makes behaviour easy to test and extend.
+
+## Where to look in code
+- `App/models/user.py` — `User(db.Model)` persisted model.
+- `App/models/elevator.py` — `Elevator(db.Model)` persisted model with setters (`set_floor_state`, `set_door_state`) that persist changes.
+- `App/models/state.py` — state pattern implementation (FloorState, DoorState and their concrete subclasses).
+- `wsgi.py` — includes a `flask` CLI command `flask elevator` which lets you select an elevator row and operate it using the state objects (open/close/first_floor/ground_floor). The CLI rehydrates runtime state objects from persisted columns and uses the model setters for changes.
+
+## Quick usage (CLI)
+From the project root, with your virtualenv active and configuration set (see your `.flaskenv`):
+
+1. Initialize the database and seed elevators (this project provides an `init` command):
+
+```cmd
+set FLASK_APP=wsgi
+flask init
 ```
 
-# Configuration Management
+2. Start the elevator CLI and select an elevator id:
 
-
-Configuration information such as the database url/port, credentials, API keys etc are to be supplied to the application. However, it is bad practice to stage production information in publicly visible repositories.
-Instead, all config is provided by a config file or via [environment variables](https://linuxize.com/post/how-to-set-and-list-environment-variables-in-linux/).
-
-## In Development
-
-When running the project in a development environment (such as gitpod) the app is configured via default_config.py file in the App folder. By default, the config for development uses a sqlite database.
-
-default_config.py
-```python
-SQLALCHEMY_DATABASE_URI = "sqlite:///temp-database.db"
-SECRET_KEY = "secret key"
-JWT_ACCESS_TOKEN_EXPIRES = 7
-ENV = "DEVELOPMENT"
+```cmd
+flask elevator
 ```
 
-These values would be imported and added to the app in load_config() function in config.py
+3. Commands you can run inside the CLI: `open`, `close`, `first_floor`, `ground_floor`, `switch`, `help`, `quit`.
 
-config.py
-```python
-# must be updated to inlude addtional secrets/ api keys & use a gitignored custom-config file instad
-def load_config():
-    config = {'ENV': os.environ.get('ENV', 'DEVELOPMENT')}
-    delta = 7
-    if config['ENV'] == "DEVELOPMENT":
-        from .default_config import JWT_ACCESS_TOKEN_EXPIRES, SQLALCHEMY_DATABASE_URI, SECRET_KEY
-        config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-        config['SECRET_KEY'] = SECRET_KEY
-        delta = JWT_ACCESS_TOKEN_EXPIRES
-...
-```
+Each operation uses the state objects and the Elevator's setter methods so the `floor` and `door` columns are kept in sync with runtime behaviour.
 
-## In Production
+## Notes and best practices
+- Always use `Elevator.set_floor_state()` and `Elevator.set_door_state()` to change states so changes are persisted correctly.
+- State classes should not perform direct attribute assignment to persisted fields; they should call the model setters.
+- The persisted string values in `floor` and `door` are the authoritative DB values and are used to rehydrate runtime state when the CLI selects an elevator.
 
-When deploying your application to production/staging you must pass
-in configuration information via environment tab of your render project's dashboard.
+## Focused documentation
+This README intentionally focuses on the models and state pattern. Sections covering configuration management, tests, deployment, and troubleshooting from the original template were removed to keep the documentation focused.
 
-![perms](./images/fig1.png)
-
-# Flask Commands
-
-wsgi.py is a utility script for performing various tasks related to the project. You can use it to import and test any code in the project. 
-You just need create a manager command function, for example:
-
-```python
-# inside wsgi.py
-
-user_cli = AppGroup('user', help='User object commands')
-
-@user_cli.cli.command("create-user")
-@click.argument("username")
-@click.argument("password")
-def create_user_command(username, password):
-    create_user(username, password)
-    print(f'{username} created!')
-
-app.cli.add_command(user_cli) # add the group to the cli
-
-```
-
-Then execute the command invoking with flask cli with command name and the relevant parameters
-
-```bash
-$ flask user create bob bobpass
-```
-
-
-# Running the Project
-
-_For development run the serve command (what you execute):_
-```bash
-$ flask run
-```
-
-_For production using gunicorn (what the production server executes):_
-```bash
-$ gunicorn wsgi:app
-```
-
-# Deploying
-You can deploy your version of this app to render by clicking on the "Deploy to Render" link above.
-
-# Initializing the Database
-When connecting the project to a fresh empty database ensure the appropriate configuration is set then file then run the following command. This must also be executed once when running the app on heroku by opening the heroku console, executing bash and running the command in the dyno.
-
-```bash
-$ flask init
-```
-
-# Database Migrations
-If changes to the models are made, the database must be'migrated' so that it can be synced with the new models.
-Then execute following commands using manage.py. More info [here](https://flask-migrate.readthedocs.io/en/latest/)
-
-```bash
-$ flask db init
-$ flask db migrate
-$ flask db upgrade
-$ flask db --help
-```
-
-# Testing
-
-## Unit & Integration
-Unit and Integration tests are created in the App/test. You can then create commands to run them. Look at the unit test command in wsgi.py for example
-
-```python
-@test.command("user", help="Run User tests")
-@click.argument("type", default="all")
-def user_tests_command(type):
-    if type == "unit":
-        sys.exit(pytest.main(["-k", "UserUnitTests"]))
-    elif type == "int":
-        sys.exit(pytest.main(["-k", "UserIntegrationTests"]))
-    else:
-        sys.exit(pytest.main(["-k", "User"]))
-```
-
-You can then execute all user tests as follows
-
-```bash
-$ flask test user
-```
-
-You can also supply "unit" or "int" at the end of the comand to execute only unit or integration tests.
-
-You can run all application tests with the following command
-
-```bash
-$ pytest
-```
-
-## Test Coverage
-
-You can generate a report on your test coverage via the following command
-
-```bash
-$ coverage report
-```
-
-You can also generate a detailed html report in a directory named htmlcov with the following comand
-
-```bash
-$ coverage html
-```
-
-# Troubleshooting
-
-## Views 404ing
-
-If your newly created views are returning 404 ensure that they are added to the list in main.py.
-
-```python
-from App.views import (
-    user_views,
-    index_views
-)
-
-# New views must be imported and added to this list
-views = [
-    user_views,
-    index_views
-]
-```
-
-## Cannot Update Workflow file
-
-If you are running into errors in gitpod when updateding your github actions file, ensure your [github permissions](https://gitpod.io/integrations) in gitpod has workflow enabled ![perms](./images/gitperms.png)
-
-## Database Issues
-
-If you are adding models you may need to migrate the database with the commands given in the previous database migration section. Alternateively you can delete you database file.
+If you want, I can:
+- Add a short `docs/models-diagram.md` file containing the Mermaid diagram and link it here, or
+- Export `models.png` to a different format or regenerate it from a Mermaid source. Which would you prefer?
